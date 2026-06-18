@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:live": "vitest run --reporter=verbose tests/live"
+    "test:live": "vitest run --reporter=verbose tests/live",
+    "test:e2e": "node scripts/e2e.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

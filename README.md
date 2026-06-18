@@ -212,6 +212,20 @@ Marketing-oriented questions for the connected assistant:
 - "List pages whose name matches \"Checkout\" with more than 100 unique visits."
 - "Compare page impressions for `/en/` vs `/de/` URLs over the last 30 days."
 
+## Data notes
+
+- **Composite row IDs**: `get_report_data` rows carry an `id` that can be a
+  comma-joined composite of the report's dimensions (e.g. `pageNameId,urlId`
+  for `EAPage`). `compare_report_data` joins on this full `id`, i.e. at the
+  granularity of the attributes you request.
+- **Invisible characters in attribute values**: etracker may track the same
+  URL under two `page_name` values — a normal one and a second one prefixed
+  with an invisible separator (`U+2063`), e.g. from a JS-set `et_pagename`
+  vs. an auto-derived name. Grouping by `page_name` then shows the page
+  twice. For per-URL truth, request `attributes=url` (drop `page_name`) so
+  etracker aggregates by URL; or strip zero-width/invisible characters before
+  deduping names.
+
 ## Configuration
 
 | Env | Required | Default | |
@@ -249,8 +263,13 @@ client via the `X-ET-Token` request header. See
 pnpm install
 pnpm dev           # tsx watch
 pnpm test          # unit tests
-pnpm test:live     # live smoke test, needs ETRACKER_TOKEN env
+pnpm test:live     # live smoke test (client → API), needs ETRACKER_TOKEN env
 pnpm build         # tsc → dist/
+
+# Holistic end-to-end test: drives the running server over the real MCP
+# transport against the live API, exercising every tool.
+pnpm build && node dist/index.js &      # start the server
+ETRACKER_TOKEN=... pnpm test:e2e        # MCP_URL overridable (default :3334)
 ```
 
 All tools are read-only. Add a tool: extend `src/tools.ts`, add a unit test
