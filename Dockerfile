@@ -6,9 +6,12 @@ ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
 RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
-# tolerate missing lockfile during fresh setup; in CI prefer --frozen-lockfile
+# tolerate missing lockfile during fresh setup; in CI prefer --frozen-lockfile.
+# --ignore-scripts: this stage only compiles TS via tsc; no dependency build
+# scripts (e.g. esbuild's) are needed, and pnpm 10+ exits non-zero on
+# unapproved build scripts otherwise.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --prefer-frozen-lockfile
+    pnpm install --prefer-frozen-lockfile --ignore-scripts
 
 # ---- 2. compile TypeScript ----
 FROM node:22-alpine AS build
@@ -27,7 +30,7 @@ RUN corepack enable
 WORKDIR /app
 COPY package.json pnpm-lock.yaml* ./
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --prod --prefer-frozen-lockfile
+    pnpm install --prod --prefer-frozen-lockfile --ignore-scripts
 
 # ---- 4. minimal runtime image ----
 FROM node:22-alpine AS runtime
