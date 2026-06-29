@@ -1,0 +1,48 @@
+{
+  "manifest_version": "0.2",
+  "name": "etracker-mcp",
+  "display_name": "etracker Analytics",
+  "version": "0.0.0",
+  "description": "Query the etracker Analytics Report API from Claude (read-only).",
+  "long_description": "Read-only access to the etracker Analytics Report API: list reports, inspect their metadata, fetch report rows for a date range, and compare two periods. Connects to a hosted etracker MCP server; you provide your own etracker access token (scope: Reporting API).",
+  "author": {
+    "name": "mittwald",
+    "url": "https://github.com/mittwald/etracker-mcp"
+  },
+  "homepage": "https://github.com/mittwald/etracker-mcp",
+  "documentation": "https://github.com/mittwald/etracker-mcp#readme",
+  "license": "MIT",
+  "server": {
+    "type": "node",
+    "entry_point": "server/launch.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/launch.mjs"],
+      "env": {
+        "ETRACKER_MCP_URL": "${user_config.url}",
+        "ETRACKER_TOKEN": "${user_config.token}"
+      }
+    }
+  },
+  "user_config": {
+    "url": {
+      "type": "string",
+      "title": "Server URL",
+      "description": "Endpoint of the etracker MCP server. Leave the default unless you run your own instance.",
+      "default": "https://etracker-mcp.mittwald.de/mcp",
+      "required": true
+    },
+    "token": {
+      "type": "string",
+      "title": "etracker Access Token",
+      "description": "etracker access token with scope \"Reporting API\" (Settings → Account → Integration).",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "compatibility": {
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  }
+}
