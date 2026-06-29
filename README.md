@@ -238,15 +238,23 @@ Marketing-oriented questions for the connected assistant:
 
 - **Composite row IDs**: `get_report_data` rows carry an `id` that can be a
   comma-joined composite of the report's dimensions (e.g. `pageNameId,urlId`
-  for `EAPage`). `compare_report_data` joins on this full `id`, i.e. at the
-  granularity of the attributes you request.
-- **Invisible characters in attribute values**: etracker may track the same
-  URL under two `page_name` values — a normal one and a second one prefixed
-  with an invisible separator (`U+2063`), e.g. from a JS-set `et_pagename`
-  vs. an auto-derived name. Grouping by `page_name` then shows the page
-  twice. For per-URL truth, request `attributes=url` (drop `page_name`) so
-  etracker aggregates by URL; or strip zero-width/invisible characters before
-  deduping names.
+  for `EAPage`). `compare_report_data` joins rows by the **requested attribute
+  values** (falling back to `id` when no attributes are requested), i.e. at the
+  granularity of the attributes you select.
+- **Invisible characters in attribute values (handled automatically)**:
+  etracker may track the same entity under two attribute values that differ
+  only by an invisible character — e.g. a `page_name` and a second copy
+  prefixed with an invisible separator (`U+2063`) because the tracked page's
+  JavaScript prepends one to `document.title`, from which etracker auto-derives
+  the page name. These show up as phantom duplicate rows (e.g. 627 + 7 for the
+  same page). The server strips zero-width/format characters
+  (`U+200B–200F`, `U+2060–2063`, `U+FEFF`, soft hyphen, bidi marks) from
+  attribute values and **merges rows that then become identical, summing the
+  requested keyfigures**. `get_report_data` merges when `figures` are given
+  (otherwise it only strips); `compare_report_data` always merges and reports
+  how many duplicates were collapsed via `mergedDuplicates`. To fix it at the
+  source, set a clean `et_pagename` on the tracked page so etracker stops
+  deriving the name from the mutated title.
 
 ## Configuration
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { EtrackerClient, dateRange, previousRange } from './etracker-client.js';
+import { logger } from './logger.js';
 
 const reportIdShape = {
   reportId: z
@@ -131,9 +132,62 @@ function toNum(value: string | number | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function rowKey(row: Row, attributeIds: string[]): string {
-  if (row.id !== undefined && row.id !== null) return String(row.id);
-  return attributeIds.map((a) => String(row[a] ?? '')).join('');
+// Zero-width and bidirectional/format characters that etracker sometimes embeds
+// in attribute values (e.g. a U+2063 INVISIBLE SEPARATOR prepended to a
+// page_name by the tracked page's JS). They are invisible yet split one logical
+// entity into two rows; stripping them lets those rows collapse into one.
+const INVISIBLE_CHARS = new RegExp(
+  '[\\u00AD\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u2069\\uFEFF]',
+  'g',
+);
+
+function clean(value: string): string {
+  return value.replace(INVISIBLE_CHARS, '');
+}
+
+function cleanRow(row: Row): Row {
+  const out: Row = {};
+  for (const [k, v] of Object.entries(row)) out[k] = typeof v === 'string' ? clean(v) : v;
+  return out;
+}
+
+function parseList(value: string | undefined): string[] {
+  return (value ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+// Key a row by its cleaned attribute values, so invisible-character variants of
+// the same entity collide. Falls back to the cleaned id when no attributes were
+// requested. etracker already aggregates by the requested attributes, so this
+// only merges rows it kept apart purely because of invisible characters.
+function mergeKey(row: Row, attributeIds: string[]): string {
+  if (attributeIds.length > 0) {
+    return attributeIds.map((a) => clean(String(row[a] ?? ''))).join('');
+  }
+  if (row.id !== undefined && row.id !== null) return clean(String(row.id));
+  return JSON.stringify(cleanRow(row));
+}
+
+// Strip invisible characters from string values and merge rows that become
+// identical (by mergeKey), summing the given keyfigures. Returns the cleaned,
+// de-duplicated rows and how many duplicate rows were merged away.
+function dedupeRows(
+  rows: Row[],
+  figureIds: string[],
+  attributeIds: string[],
+): { rows: Row[]; merged: number } {
+  const byKey = new Map<string, Row>();
+  let merged = 0;
+  for (const raw of rows) {
+    const key = mergeKey(raw, attributeIds);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, cleanRow(raw));
+    } else {
+      merged++;
+      for (const f of figureIds) existing[f] = toNum(existing[f]) + toNum(raw[f]);
+    }
+  }
+  return { rows: [...byKey.values()], merged };
 }
 
 function diffRow(
@@ -211,9 +265,22 @@ export const tools: ToolDefinition[] = [
         rangeDays?: number;
       };
       const range = dateRange(rest);
-      return client.request(`/report/${encodeURIComponent(reportId)}/data`, {
+      const result = await client.request(`/report/${encodeURIComponent(reportId)}/data`, {
         query: dataQuery(rest, range),
       });
+
+      // Collapse phantom duplicates caused by invisible characters in attribute
+      // values. Merge (summing keyfigures) only when figures are known; otherwise
+      // just strip the invisible characters so the values display cleanly.
+      if (!Array.isArray(result)) return result;
+      const rows = result as Row[];
+      const figureIds = parseList(rest.figures);
+      if (figureIds.length === 0) return rows.map(cleanRow);
+      const { rows: deduped, merged } = dedupeRows(rows, figureIds, parseList(rest.attributes));
+      if (merged > 0) {
+        logger.info('merged invisible-character duplicate rows', { report: reportId, merged });
+      }
+      return deduped;
     },
   },
   {
@@ -266,21 +333,26 @@ export const tools: ToolDefinition[] = [
         );
       }
 
-      const figureIds = rest.figures.split(',').map((s) => s.trim()).filter(Boolean);
-      const attributeIds = (rest.attributes ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+      const figureIds = parseList(rest.figures);
+      const attributeIds = parseList(rest.attributes);
+
+      // Collapse invisible-character phantom duplicates within each period before
+      // joining, so the same logical entity isn't split across rows.
+      const { rows: curClean, merged: curMerged } = dedupeRows(curRows, figureIds, attributeIds);
+      const { rows: prevClean, merged: prevMerged } = dedupeRows(prevRows, figureIds, attributeIds);
 
       const prevByKey = new Map<string, Row>();
-      for (const row of prevRows) prevByKey.set(rowKey(row, attributeIds), row);
+      for (const row of prevClean) prevByKey.set(mergeKey(row, attributeIds), row);
 
       const seen = new Set<string>();
       const rows: DiffRow[] = [];
-      for (const cur of curRows) {
-        const key = rowKey(cur, attributeIds);
+      for (const cur of curClean) {
+        const key = mergeKey(cur, attributeIds);
         seen.add(key);
         rows.push(diffRow(cur, prevByKey.get(key), figureIds, attributeIds));
       }
-      for (const prev of prevRows) {
-        const key = rowKey(prev, attributeIds);
+      for (const prev of prevClean) {
+        const key = mergeKey(prev, attributeIds);
         if (!seen.has(key)) rows.push(diffRow(undefined, prev, figureIds, attributeIds));
       }
 
@@ -298,6 +370,7 @@ export const tools: ToolDefinition[] = [
         current,
         previous,
         figures: figureIds,
+        mergedDuplicates: curMerged + prevMerged,
         rowCount: limited.length,
         rows: limited,
       };
