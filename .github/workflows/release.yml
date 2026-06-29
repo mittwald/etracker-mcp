@@ -2,6 +2,7 @@ name: Release
 
 on:
   push:
+    branches: [main]
     tags: ['v*.*.*']
   workflow_dispatch:
 
@@ -33,7 +34,17 @@ jobs:
           # Falls back to the manifest default when unset.
           ETRACKER_MCP_URL: ${{ vars.ETRACKER_MCP_URL }}
 
+      # Every build (incl. main pushes) is downloadable from the Actions run.
+      - name: Upload bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: etracker-mcp-mcpb
+          path: dist-mcpb/*.mcpb
+          if-no-files-found: error
+
+      # Only tagged releases additionally get the bundle attached to a release.
       - name: Attach bundle to release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist-mcpb/*.mcpb
