@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { EtrackerClient, dateRange, previousRange } from './etracker-client.js';
-import { logger } from './logger.js';
 
 const reportIdShape = {
   reportId: z
@@ -134,8 +133,10 @@ function toNum(value: string | number | null | undefined): number {
 
 // Zero-width and bidirectional/format characters that etracker sometimes embeds
 // in attribute values (e.g. a U+2063 INVISIBLE SEPARATOR prepended to a
-// page_name by the tracked page's JS). They are invisible yet split one logical
-// entity into two rows; stripping them lets those rows collapse into one.
+// page_name by the tracked page's JS). They are invisible noise in labels; we
+// strip them from displayed attribute values only. Keyfigures and rows are left
+// exactly as etracker returns them, so the numbers always match etracker's
+// own report (and its web UI) — we never merge, sum or invent values.
 const INVISIBLE_CHARS = new RegExp(
   '[\\u00AD\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u2069\\uFEFF]',
   'g',
@@ -145,6 +146,8 @@ function clean(value: string): string {
   return value.replace(INVISIBLE_CHARS, '');
 }
 
+// Strip invisible characters from string values (labels) only; numeric figures
+// are left exactly as etracker returned them.
 function cleanRow(row: Row): Row {
   const out: Row = {};
   for (const [k, v] of Object.entries(row)) out[k] = typeof v === 'string' ? clean(v) : v;
@@ -155,39 +158,9 @@ function parseList(value: string | undefined): string[] {
   return (value ?? '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-// Key a row by its cleaned attribute values, so invisible-character variants of
-// the same entity collide. Falls back to the cleaned id when no attributes were
-// requested. etracker already aggregates by the requested attributes, so this
-// only merges rows it kept apart purely because of invisible characters.
-function mergeKey(row: Row, attributeIds: string[]): string {
-  if (attributeIds.length > 0) {
-    return attributeIds.map((a) => clean(String(row[a] ?? ''))).join('');
-  }
-  if (row.id !== undefined && row.id !== null) return clean(String(row.id));
-  return JSON.stringify(cleanRow(row));
-}
-
-// Strip invisible characters from string values and merge rows that become
-// identical (by mergeKey), summing the given keyfigures. Returns the cleaned,
-// de-duplicated rows and how many duplicate rows were merged away.
-function dedupeRows(
-  rows: Row[],
-  figureIds: string[],
-  attributeIds: string[],
-): { rows: Row[]; merged: number } {
-  const byKey = new Map<string, Row>();
-  let merged = 0;
-  for (const raw of rows) {
-    const key = mergeKey(raw, attributeIds);
-    const existing = byKey.get(key);
-    if (!existing) {
-      byKey.set(key, cleanRow(raw));
-    } else {
-      merged++;
-      for (const f of figureIds) existing[f] = toNum(existing[f]) + toNum(raw[f]);
-    }
-  }
-  return { rows: [...byKey.values()], merged };
+function rowKey(row: Row, attributeIds: string[]): string {
+  if (row.id !== undefined && row.id !== null) return String(row.id);
+  return attributeIds.map((a) => String(row[a] ?? '')).join('');
 }
 
 function diffRow(
@@ -252,7 +225,7 @@ export const tools: ToolDefinition[] = [
   {
     name: 'get_report_data',
     description:
-      'Fetch report data rows for a report. Supports date range, paging, sorting, column selection and filtering. Limited to 100,000 rows per response. Discover valid column IDs with get_report_metadata.',
+      'Fetch report data rows for a report. Supports date range, paging, sorting, column selection and filtering. Limited to 100,000 rows per response. Discover valid column IDs with get_report_metadata. Values are returned exactly as etracker reports them (matching the web UI); only invisible/zero-width characters are stripped from attribute labels. Note: etracker can list the same page twice when its page_name differs only by an invisible character — for a de-duplicated per-page total, query by `url` (attributes=url) so etracker aggregates server-side, rather than summing the rows yourself.',
     inputSchema: z.object({
       ...reportIdShape,
       ...dateRangeShape,
@@ -269,24 +242,19 @@ export const tools: ToolDefinition[] = [
         query: dataQuery(rest, range),
       });
 
-      // Collapse phantom duplicates caused by invisible characters in attribute
-      // values. Merge (summing keyfigures) only when figures are known; otherwise
-      // just strip the invisible characters so the values display cleanly.
-      if (!Array.isArray(result)) return result;
-      const rows = result as Row[];
-      const figureIds = parseList(rest.figures);
-      if (figureIds.length === 0) return rows.map(cleanRow);
-      const { rows: deduped, merged } = dedupeRows(rows, figureIds, parseList(rest.attributes));
-      if (merged > 0) {
-        logger.info('merged invisible-character duplicate rows', { report: reportId, merged });
-      }
-      return deduped;
+      // Strip invisible characters from attribute labels so phantom duplicates
+      // (e.g. a page_name with a U+2063 prefix) are recognizable as the same
+      // entity. Keyfigures are returned exactly as etracker reports them and
+      // rows are not merged, so totals match etracker's web UI. For a
+      // de-duplicated per-URL total, query with attributes=url so etracker
+      // aggregates server-side.
+      return Array.isArray(result) ? (result as Row[]).map(cleanRow) : result;
     },
   },
   {
     name: 'compare_report_data',
     description:
-      'Compare a report across two periods and return per-row deltas. Fetches the current range and a comparison range, joins rows by id, and computes current/previous/delta/pctChange for each requested figure. When the previous range is omitted it defaults to the equally long period immediately before the current one. Rows are sorted by the absolute delta of the first figure (largest changes first) — ideal for spotting anomalies. Requires figures.',
+      'Compare a report across two periods and return per-row deltas. Fetches the current range and a comparison range, joins rows by id, and computes current/previous/delta/pctChange for each requested figure. When the previous range is omitted it defaults to the equally long period immediately before the current one. Rows are sorted by the absolute delta of the first figure (largest changes first) — ideal for spotting anomalies. Requires figures. Figures are taken verbatim from etracker; only invisible characters are stripped from labels (rows are never merged).',
     inputSchema: z.object({
       ...reportIdShape,
       ...dateRangeShape,
@@ -336,23 +304,23 @@ export const tools: ToolDefinition[] = [
       const figureIds = parseList(rest.figures);
       const attributeIds = parseList(rest.attributes);
 
-      // Collapse invisible-character phantom duplicates within each period before
-      // joining, so the same logical entity isn't split across rows.
-      const { rows: curClean, merged: curMerged } = dedupeRows(curRows, figureIds, attributeIds);
-      const { rows: prevClean, merged: prevMerged } = dedupeRows(prevRows, figureIds, attributeIds);
+      // Clean invisible characters from labels only; keep figures and the per-id
+      // granularity exactly as etracker reports them (rows are not merged).
+      const curClean = curRows.map(cleanRow);
+      const prevClean = prevRows.map(cleanRow);
 
       const prevByKey = new Map<string, Row>();
-      for (const row of prevClean) prevByKey.set(mergeKey(row, attributeIds), row);
+      for (const row of prevClean) prevByKey.set(rowKey(row, attributeIds), row);
 
       const seen = new Set<string>();
       const rows: DiffRow[] = [];
       for (const cur of curClean) {
-        const key = mergeKey(cur, attributeIds);
+        const key = rowKey(cur, attributeIds);
         seen.add(key);
         rows.push(diffRow(cur, prevByKey.get(key), figureIds, attributeIds));
       }
       for (const prev of prevClean) {
-        const key = mergeKey(prev, attributeIds);
+        const key = rowKey(prev, attributeIds);
         if (!seen.has(key)) rows.push(diffRow(undefined, prev, figureIds, attributeIds));
       }
 
@@ -370,7 +338,6 @@ export const tools: ToolDefinition[] = [
         current,
         previous,
         figures: figureIds,
-        mergedDuplicates: curMerged + prevMerged,
         rowCount: limited.length,
         rows: limited,
       };
