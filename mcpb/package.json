@@ -4,6 +4,6 @@
   "private": true,
   "description": "Runtime dependencies bundled into the etracker MCP Desktop Extension (.mcpb).",
   "dependencies": {
-    "mcp-remote": "0.1.38"
+    "@modelcontextprotocol/sdk": "1.29.0"
   }
 }
