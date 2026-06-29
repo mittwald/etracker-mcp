@@ -24,7 +24,10 @@ jobs:
           cache: pnpm
 
       - name: Build .mcpb bundle
-        run: pnpm pack:mcpb
+        # Invoke directly (not via `pnpm pack:mcpb`) so the pnpm script runner's
+        # project deps-status check doesn't run; the build script only needs
+        # node + pnpm on PATH and installs the bundle's deps in a temp dir.
+        run: node scripts/build-mcpb.mjs
         env:
           # Repo variable: Settings → Secrets and variables → Actions → Variables.
           # Falls back to the manifest default when unset.

@@ -1,0 +1,9 @@
+{
+  "name": "etracker-mcp-bundle",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Runtime dependencies bundled into the etracker MCP Desktop Extension (.mcpb).",
+  "dependencies": {
+    "mcp-remote": "0.1.38"
+  }
+}
