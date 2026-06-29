@@ -93,10 +93,11 @@ settings → Install Extension…**). You'll be prompted for two values in a for
 - **etracker Access Token** — your token with scope *Reporting API* (stored in
   the OS keychain, marked sensitive).
 
-Works on macOS, Windows and Linux with no extra setup — the `mcp-remote`
-bridge is bundled in the extension and runs on Claude Desktop's own Node
-runtime (no system Node, no `npx`, no network fetch on first launch). To build
-the bundle yourself: `pnpm pack:mcpb` → `dist-mcpb/etracker-mcp-<version>.mcpb`.
+Works on macOS, Windows and Linux with no extra setup — the extension bundles
+a small stdio↔HTTP bridge that runs in-process on Claude Desktop's own Node
+runtime (no system Node, no `npx`, no local listening socket; the only network
+I/O is the outbound HTTPS call to the server). To build the bundle yourself:
+`pnpm pack:mcpb` → `dist-mcpb/etracker-mcp-<version>.mcpb`.
 
 <details>
 <summary><b>Manual alternative: edit the config with <code>mcp-remote</code></b></summary>
