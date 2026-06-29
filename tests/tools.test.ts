@@ -120,52 +120,38 @@ describe('tools', () => {
     expect(c.figures.visits).toMatchObject({ delta: -30, pctChange: -100 });
   });
 
-  it('get_report_data merges invisible-character phantom duplicates and sums figures', async () => {
+  it('get_report_data strips invisible characters from labels but returns figures and rows verbatim', async () => {
     // Same page tracked twice: one variant carries a U+2063 in the page_name,
     // giving it a different composite id, so etracker reports it as two rows.
     const request = vi.fn(async () => [
-      { id: '1,9', page_name: 'Container Hosting', unique_visits: 627 },
-      { id: '2,9', page_name: '\u2063Container Hosting', unique_visits: 7 },
-      { id: '3,8', page_name: 'Other', unique_visits: 10 },
+      { id: '1,9', page_name: 'Container Hosting', page_impressions: 627 },
+      { id: '2,9', page_name: '\u2063Container Hosting', page_impressions: 7 },
     ]);
     const client = { request } as unknown as EtrackerClient;
 
     const rows = (await tool('get_report_data').handler(client, {
       reportId: 'EAPage',
       attributes: 'page_name',
-      figures: 'unique_visits',
-    })) as Array<{ page_name: string; unique_visits: number }>;
+      figures: 'page_impressions',
+    })) as Array<{ page_name: string; page_impressions: number }>;
 
+    // Both rows are preserved (matching etracker / the web UI); only the label
+    // is cleaned \u2014 figures are untouched, nothing is summed or merged.
     expect(rows).toHaveLength(2);
-    const merged = rows.find((r) => r.page_name === 'Container Hosting')!;
-    expect(merged.unique_visits).toBe(634);
+    expect(rows.map((r) => r.page_impressions).sort((a, b) => a - b)).toEqual([7, 627]);
+    expect(rows.every((r) => r.page_name === 'Container Hosting')).toBe(true);
     expect(rows.every((r) => !/\u2063/.test(r.page_name))).toBe(true);
   });
 
-  it('get_report_data strips invisible characters even without figures (no merge)', async () => {
-    const request = vi.fn(async () => [
-      { id: '2,9', page_name: '\u2063Container Hosting', unique_visits: 7 },
-    ]);
-    const client = { request } as unknown as EtrackerClient;
-
-    const rows = (await tool('get_report_data').handler(client, {
-      reportId: 'EAPage',
-      attributes: 'page_name',
-    })) as Array<{ page_name: string }>;
-
-    expect(rows).toHaveLength(1);
-    expect(rows[0].page_name).toBe('Container Hosting');
-  });
-
-  it('compare_report_data merges invisible-character duplicates before diffing', async () => {
+  it('compare_report_data keeps invisible-character variants as separate rows', async () => {
     const request = vi.fn(async (_path: string, init: { query: { startDate: string } }) => {
       if (init.query.startDate === '2024-05-08') {
         return [
-          { id: '1,9', page_name: 'Container Hosting', visits: 627 },
-          { id: '2,9', page_name: '\u2063Container Hosting', visits: 7 },
+          { id: '1,9', page_name: 'Container Hosting', page_impressions: 627 },
+          { id: '2,9', page_name: '\u2063Container Hosting', page_impressions: 7 },
         ];
       }
-      return [{ id: '1,9', page_name: 'Container Hosting', visits: 600 }];
+      return [{ id: '1,9', page_name: 'Container Hosting', page_impressions: 600 }];
     });
     const client = { request } as unknown as EtrackerClient;
 
@@ -174,14 +160,14 @@ describe('tools', () => {
       startDate: '2024-05-08',
       endDate: '2024-05-14',
       attributes: 'page_name',
-      figures: 'visits',
+      figures: 'page_impressions',
     })) as {
-      mergedDuplicates: number;
-      rows: Array<{ figures: { visits: { current: number; delta: number } } }>;
+      rows: Array<{ id: string; page_name?: string; figures: { page_impressions: { current: number } } }>;
     };
 
-    expect(result.mergedDuplicates).toBe(1);
-    expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].figures.visits).toMatchObject({ current: 634, delta: 34 });
+    // Two distinct ids \u2192 two rows, joined per id; figures verbatim (no merge).
+    expect(result.rows).toHaveLength(2);
+    const main = result.rows.find((r) => r.id === '1,9')!;
+    expect(main.figures.page_impressions.current).toBe(627);
   });
 });
