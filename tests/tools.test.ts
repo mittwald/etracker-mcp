@@ -119,4 +119,69 @@ describe('tools', () => {
     expect(c.presence).toBe('gone');
     expect(c.figures.visits).toMatchObject({ delta: -30, pctChange: -100 });
   });
+
+  it('get_report_data merges invisible-character phantom duplicates and sums figures', async () => {
+    // Same page tracked twice: one variant carries a U+2063 in the page_name,
+    // giving it a different composite id, so etracker reports it as two rows.
+    const request = vi.fn(async () => [
+      { id: '1,9', page_name: 'Container Hosting', unique_visits: 627 },
+      { id: '2,9', page_name: '\u2063Container Hosting', unique_visits: 7 },
+      { id: '3,8', page_name: 'Other', unique_visits: 10 },
+    ]);
+    const client = { request } as unknown as EtrackerClient;
+
+    const rows = (await tool('get_report_data').handler(client, {
+      reportId: 'EAPage',
+      attributes: 'page_name',
+      figures: 'unique_visits',
+    })) as Array<{ page_name: string; unique_visits: number }>;
+
+    expect(rows).toHaveLength(2);
+    const merged = rows.find((r) => r.page_name === 'Container Hosting')!;
+    expect(merged.unique_visits).toBe(634);
+    expect(rows.every((r) => !/\u2063/.test(r.page_name))).toBe(true);
+  });
+
+  it('get_report_data strips invisible characters even without figures (no merge)', async () => {
+    const request = vi.fn(async () => [
+      { id: '2,9', page_name: '\u2063Container Hosting', unique_visits: 7 },
+    ]);
+    const client = { request } as unknown as EtrackerClient;
+
+    const rows = (await tool('get_report_data').handler(client, {
+      reportId: 'EAPage',
+      attributes: 'page_name',
+    })) as Array<{ page_name: string }>;
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].page_name).toBe('Container Hosting');
+  });
+
+  it('compare_report_data merges invisible-character duplicates before diffing', async () => {
+    const request = vi.fn(async (_path: string, init: { query: { startDate: string } }) => {
+      if (init.query.startDate === '2024-05-08') {
+        return [
+          { id: '1,9', page_name: 'Container Hosting', visits: 627 },
+          { id: '2,9', page_name: '\u2063Container Hosting', visits: 7 },
+        ];
+      }
+      return [{ id: '1,9', page_name: 'Container Hosting', visits: 600 }];
+    });
+    const client = { request } as unknown as EtrackerClient;
+
+    const result = (await tool('compare_report_data').handler(client, {
+      reportId: 'EAPage',
+      startDate: '2024-05-08',
+      endDate: '2024-05-14',
+      attributes: 'page_name',
+      figures: 'visits',
+    })) as {
+      mergedDuplicates: number;
+      rows: Array<{ figures: { visits: { current: number; delta: number } } }>;
+    };
+
+    expect(result.mergedDuplicates).toBe(1);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].figures.visits).toMatchObject({ current: 634, delta: 34 });
+  });
 });
