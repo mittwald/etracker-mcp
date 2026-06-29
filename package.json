@@ -19,7 +19,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:live": "vitest run --reporter=verbose tests/live",
-    "test:e2e": "node scripts/e2e.mjs"
+    "test:e2e": "node scripts/e2e.mjs",
+    "pack:mcpb": "node scripts/build-mcpb.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

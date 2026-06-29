@@ -82,6 +82,24 @@ claude mcp add etracker http://127.0.0.1:3334/mcp --transport http \
 
 ### Claude Desktop
 
+**Recommended: one-click install via the `.mcpb` extension.** No config
+files, no Docker. Download the latest `etracker-mcp-<version>.mcpb` from the
+[Releases](https://github.com/mittwald/etracker-mcp/releases) page and
+double-click it (or in Claude Desktop: **Settings → Extensions → Advanced
+settings → Install Extension…**). You'll be prompted for two values in a form:
+
+- **Server URL** — pre-filled with the hosted instance; leave as is unless you
+  run your own.
+- **etracker Access Token** — your token with scope *Reporting API* (stored in
+  the OS keychain, marked sensitive).
+
+Node.js must be installed system-wide (the extension uses `npx` to fetch the
+`mcp-remote` bridge on first launch). To build the bundle yourself:
+`pnpm pack:mcpb` → `dist-mcpb/etracker-mcp-<version>.mcpb`.
+
+<details>
+<summary><b>Manual alternative: edit the config with <code>mcp-remote</code></b></summary>
+
 > Claude Desktop's stable config only accepts **stdio** MCP servers. To
 > use this HTTP-based server, bridge it via the `mcp-remote` shim
 > (auto-installed by `npx`). This also lets you pass the required
@@ -125,6 +143,8 @@ claude mcp add etracker http://127.0.0.1:3334/mcp --transport http \
 If it shows **failed**: check that the MCP server is running
 (`curl http://127.0.0.1:3334/health` → `{"ok": true}`) and that Node.js is
 installed system-wide (`npx` must be on your PATH).
+
+</details>
 
 ### Cursor
 

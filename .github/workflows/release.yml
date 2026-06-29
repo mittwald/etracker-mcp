@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  mcpb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Build .mcpb bundle
+        run: pnpm pack:mcpb
+        env:
+          # Repo variable: Settings → Secrets and variables → Actions → Variables.
+          # Falls back to the manifest default when unset.
+          ETRACKER_MCP_URL: ${{ vars.ETRACKER_MCP_URL }}
+
+      - name: Attach bundle to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist-mcpb/*.mcpb
+          generate_release_notes: true
