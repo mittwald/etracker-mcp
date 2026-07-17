@@ -157,6 +157,16 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
 
     let entry = sessionId ? sessions.get(sessionId) : undefined;
 
+    // A session id we do not know is expired or was lost on restart. The spec
+    // requires 404 so the client starts a new session; building a fresh
+    // transport here would instead reject every request as "not initialized".
+    if (!entry && sessionId) {
+      mcpStatus = 404;
+      logger.info('session.unknown', { sessionId });
+      sendError(res, 404, 'Unknown or expired session. Re-initialize to start a new one.');
+      return;
+    }
+
     if (!entry) {
       const token = tokenFromRequest(req);
       if (!token) {
