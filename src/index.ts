@@ -169,7 +169,11 @@ const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse
         return;
       }
 
-      const client = new EtrackerClient({ apiUrl: config.apiUrl, token });
+      const client = new EtrackerClient({
+        apiUrl: config.apiUrl,
+        token,
+        requestTimeoutMs: config.requestTimeoutMs,
+      });
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => randomUUID(),
         onsessioninitialized: (id) => {

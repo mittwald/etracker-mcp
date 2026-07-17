@@ -269,6 +269,7 @@ from attribute **labels** so duplicates are recognizable.
 | `MCP_PORT` | no | `3334` | TCP port. |
 | `LOG_LEVEL` | no | `info` | One of `debug`, `info`, `warn`, `error`. |
 | `ETRACKER_API_URL` | no | `https://ws.etracker.com/api/v7` | Base URL of the etracker Report API. |
+| `ETRACKER_REQUEST_TIMEOUT_MS` | no | `120000` | Per-request timeout. Raise it if large ranges (e.g. a full year of daily rows) still time out. |
 
 The etracker access token is not configured via env — it is passed by each
 client via the `X-ET-Token` request header. See
