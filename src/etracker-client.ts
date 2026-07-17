@@ -17,13 +17,13 @@ export type EtrackerClientOptions = {
   apiUrl: string;
   token: string;
   fetchImpl?: typeof fetch;
-  /** Per-request timeout in ms. Default 30s. */
+  /** Per-request timeout in ms. Default 120s. */
   requestTimeoutMs?: number;
 };
 
 export type QueryValue = string | number | undefined;
 
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
 
 /**
  * Thin client for the etracker Report API. Authentication uses the static
